@@ -1,15 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import './theme.css';
-
-/**
- * Simple local data mocks until backend wiring.
- */
-const mockNotes = [
-  { id: 1, title: 'Project kickoff notes', content: 'Define scope, stakeholders, and timeline.', tags: ['work'], updated_at: new Date().toISOString() },
-  { id: 2, title: 'Grocery list', content: 'Milk, eggs, bread, coffee.', tags: ['personal'], updated_at: new Date().toISOString() },
-  { id: 3, title: '[PIN] Meeting summary', content: 'Action items: A, B, C.', tags: ['work','meetings'], updated_at: new Date().toISOString() },
-];
+import { NotesProvider, useNotesStore } from './state/useNotesStore';
 
 const categories = [
   { key: 'all', label: 'All Notes' },
@@ -104,10 +96,10 @@ function NoteList({ notes, activeId, onSelect }) {
           tabIndex={0}
           onKeyDown={(e) => e.key === 'Enter' && onSelect(n.id)}
         >
-          <h3 className="note-title">{n.title.replace(/^\[PIN\]\s*/,'')}</h3>
+          <h3 className="note-title">{n.title?.replace(/^\[PIN\]\s*/,'') ?? ''}</h3>
           <div className="note-meta">
-            <span>{new Date(n.updated_at).toLocaleString()}</span>
-            <span className="tag-pill">{n.tags?.[0] ?? 'note'}</span>
+            <span>{n.updated_at ? new Date(n.updated_at).toLocaleString() : ''}</span>
+            <span className="tag-pill">{Array.isArray(n.tags) && n.tags.length > 0 ? (n.tags[0].name || n.tags[0]) : 'note'}</span>
           </div>
         </article>
       ))}
@@ -134,13 +126,13 @@ function NoteEditor({ note, onChange, onSave, onDelete }) {
         <input
           className="editor-title"
           placeholder="Note title"
-          value={note.title}
+          value={note.title || ''}
           onChange={(e) => onChange({ ...note, title: e.target.value })}
         />
         <textarea
           className="editor-content"
           placeholder="Write your note..."
-          value={note.content}
+          value={note.content || ''}
           onChange={(e) => onChange({ ...note, content: e.target.value })}
           rows={14}
         />
@@ -155,55 +147,64 @@ function NoteEditor({ note, onChange, onSave, onDelete }) {
 }
 
 // PUBLIC_INTERFACE
-function NotesScreen() {
-  /** Main notes screen with responsive layout (navbar + sidebar + main). */
+function NotesScreenInner() {
+  /** Main notes screen with responsive layout (navbar + sidebar + main), backed by store. */
   const [theme, setTheme] = useState('light');
-  const [query, setQuery] = useState('');
-  const [notes, setNotes] = useState(mockNotes);
-  const [activeId, setActiveId] = useState(notes[0]?.id || null);
+  const { state, actions } = useNotesStore();
   const navigate = useNavigate();
   const { pathname, search } = useLocation();
 
-  const currentTag = useMemo(() => {
+  // Sync filters with route (pinned/archived/trashed) and tag/search query
+  useEffect(() => {
     const params = new URLSearchParams(search);
-    return params.get('tag');
-  }, [search]);
-
-  const filtered = useMemo(() => {
-    let res = [...notes];
-    if (pathname === '/pinned') res = res.filter(n => n.title.startsWith('[PIN]'));
-    if (pathname === '/archived') res = res.filter(n => n.title.startsWith('[ARCH]'));
-    if (pathname === '/trash') res = res.filter(n => n.title.startsWith('[TRASH]'));
-    if (currentTag) res = res.filter(n => n.tags?.includes(currentTag));
-    if (query.trim()) {
-      const q = query.toLowerCase();
-      res = res.filter(n => n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q));
+    const tag = params.get('tag');
+    if (pathname === '/pinned') {
+      actions.setPinned(true);
+      actions.setArchived(null);
+      actions.setTrashed(null);
+    } else if (pathname === '/archived') {
+      actions.setPinned(null);
+      actions.setArchived(true);
+      actions.setTrashed(null);
+    } else if (pathname === '/trash') {
+      actions.setPinned(null);
+      actions.setArchived(null);
+      actions.setTrashed(true);
+    } else {
+      actions.setPinned(null);
+      actions.setArchived(null);
+      actions.setTrashed(null);
     }
-    return res;
-  }, [notes, pathname, currentTag, query]);
+    actions.setTag(tag);
+  }, [pathname, search, actions]);
 
-  const activeNote = useMemo(() => notes.find(n => n.id === activeId) || null, [notes, activeId]);
+  const activeNote = useMemo(
+    () => state.notes.find((n) => n.id === state.selectedId) || null,
+    [state.notes, state.selectedId]
+  );
 
-  const handleNewNote = () => {
-    const id = Math.max(0, ...notes.map(n => n.id)) + 1;
-    const newNote = { id, title: 'Untitled', content: '', tags: [], updated_at: new Date().toISOString() };
-    setNotes([newNote, ...notes]);
-    setActiveId(id);
+  const handleNewNote = async () => {
+    const created = await actions.createNote({ title: 'Untitled', content: '' });
     if (pathname !== '/') navigate('/');
+    actions.select(created?.id ?? null);
   };
 
   const handleChangeNote = (updated) => {
-    setNotes(prev => prev.map(n => n.id === updated.id ? { ...updated, updated_at: new Date().toISOString() } : n));
+    // Optimistic local update; persisted on Save
+    actions.select(updated.id);
   };
 
-  const handleSave = () => {
-    // Placeholder for backend integration
+  const handleSave = async () => {
+    const note = state.notes.find((n) => n.id === state.selectedId);
+    if (!note) return;
+    await actions.updateNote(note.id, { title: note.title, content: note.content });
+    await actions.refresh();
   };
 
-  const handleDelete = () => {
-    if (!activeNote) return;
-    setNotes(prev => prev.filter(n => n.id !== activeNote.id));
-    setActiveId(null);
+  const handleDelete = async () => {
+    const note = state.notes.find((n) => n.id === state.selectedId);
+    if (!note) return;
+    await actions.deleteNote(note.id);
   };
 
   const handleToggleTheme = () => {
@@ -215,6 +216,9 @@ function NotesScreen() {
     document.documentElement.style.setProperty('--border', next === 'dark' ? '#1f2937' : '#E5E7EB');
   };
 
+  // Derived list here is direct from server based on filters; local search value is in filters.search
+  const list = state.notes;
+
   return (
     <div className="app-shell">
       <Navbar onNewNote={handleNewNote} onToggleTheme={handleToggleTheme} />
@@ -222,11 +226,16 @@ function NotesScreen() {
         <Sidebar />
         <main className="main">
           <div className="toolbar">
-            <SearchBar value={query} onChange={setQuery} />
+            <SearchBar value={state.filters.search || ''} onChange={actions.setSearch} />
           </div>
           <section className="content">
-            <NoteList notes={filtered} activeId={activeId} onSelect={setActiveId} />
-            <NoteEditor note={activeNote} onChange={handleChangeNote} onSave={handleSave} onDelete={handleDelete} />
+            <NoteList notes={list} activeId={state.selectedId} onSelect={actions.select} />
+            <NoteEditor
+              note={activeNote}
+              onChange={(n) => actions.updateNote(n.id, { title: n.title, content: n.content })}
+              onSave={handleSave}
+              onDelete={handleDelete}
+            />
           </section>
         </main>
       </div>
@@ -235,17 +244,24 @@ function NotesScreen() {
 }
 
 // PUBLIC_INTERFACE
+function NotesScreen() {
+  return <NotesScreenInner />;
+}
+
+// PUBLIC_INTERFACE
 function App() {
-  /** App entry with optional routing; single Notes screen routes. */
+  /** App entry with routing and global store provider. */
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<NotesScreen />} />
-        <Route path="/pinned" element={<NotesScreen />} />
-        <Route path="/archived" element={<NotesScreen />} />
-        <Route path="/trash" element={<NotesScreen />} />
-      </Routes>
-    </Router>
+    <NotesProvider>
+      <Router>
+        <Routes>
+          <Route path="/" element={<NotesScreen />} />
+          <Route path="/pinned" element={<NotesScreen />} />
+          <Route path="/archived" element={<NotesScreen />} />
+          <Route path="/trash" element={<NotesScreen />} />
+        </Routes>
+      </Router>
+    </NotesProvider>
   );
 }
 
