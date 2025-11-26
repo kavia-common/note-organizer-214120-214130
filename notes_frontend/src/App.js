@@ -18,11 +18,9 @@ const categories = [
   { key: 'trash', label: 'Trash' },
 ];
 
-/** 
- * PUBLIC_INTERFACE
- * Top navigation bar with brand, quick actions, and theme toggle.
- */
+// PUBLIC_INTERFACE
 function Navbar({ onNewNote, onToggleTheme }) {
+  /** Top navigation bar with brand, quick actions, and theme toggle. */
   return (
     <nav className="navbar" aria-label="Top Navigation">
       <div className="brand">
@@ -39,11 +37,9 @@ function Navbar({ onNewNote, onToggleTheme }) {
   );
 }
 
-/**
- * PUBLIC_INTERFACE
- * Sidebar with categories and tags.
- */
+// PUBLIC_INTERFACE
 function Sidebar() {
+  /** Sidebar with categories and tags. */
   const location = useLocation();
 
   return (
@@ -78,11 +74,9 @@ function Sidebar() {
   );
 }
 
-/**
- * PUBLIC_INTERFACE
- * Search input used to filter notes by title/content.
- */
+// PUBLIC_INTERFACE
 function SearchBar({ value, onChange }) {
+  /** Search input used to filter notes by title/content. */
   return (
     <div className="searchbar" role="search">
       <input
@@ -96,11 +90,9 @@ function SearchBar({ value, onChange }) {
   );
 }
 
-/**
- * PUBLIC_INTERFACE
- * List of notes on the left of the editor.
- */
+// PUBLIC_INTERFACE
 function NoteList({ notes, activeId, onSelect }) {
+  /** List of notes on the left of the editor. */
   return (
     <div className="note-list" role="list" aria-label="Notes list">
       {notes.map(n => (
@@ -123,11 +115,9 @@ function NoteList({ notes, activeId, onSelect }) {
   );
 }
 
-/**
- * PUBLIC_INTERFACE
- * Simple title + multiline content editor with actions.
- */
+// PUBLIC_INTERFACE
 function NoteEditor({ note, onChange, onSave, onDelete }) {
+  /** Simple title + multiline content editor with actions. */
   if (!note) {
     return (
       <div className="editor" aria-live="polite">
@@ -164,11 +154,9 @@ function NoteEditor({ note, onChange, onSave, onDelete }) {
   );
 }
 
-/**
- * PUBLIC_INTERFACE
- * Main notes screen with responsive layout (navbar + sidebar + main).
- */
+// PUBLIC_INTERFACE
 function NotesScreen() {
+  /** Main notes screen with responsive layout (navbar + sidebar + main). */
   const [theme, setTheme] = useState('light');
   const [query, setQuery] = useState('');
   const [notes, setNotes] = useState(mockNotes);
@@ -176,7 +164,6 @@ function NotesScreen() {
   const navigate = useNavigate();
   const { pathname, search } = useLocation();
 
-  // Filter logic for category/tag/search
   const currentTag = useMemo(() => {
     const params = new URLSearchParams(search);
     return params.get('tag');
@@ -211,7 +198,6 @@ function NotesScreen() {
 
   const handleSave = () => {
     // Placeholder for backend integration
-    // Here we just update the timestamp which already happens in onChange
   };
 
   const handleDelete = () => {
@@ -221,12 +207,12 @@ function NotesScreen() {
   };
 
   const handleToggleTheme = () => {
-    setTheme(t => (t === 'light' ? 'dark' : 'light'));
-    // For now we just switch class on body background using CSS variables opt-in could be added
-    document.documentElement.style.setProperty('--background', theme === 'light' ? '#0b1220' : '#f9fafb');
-    document.documentElement.style.setProperty('--surface', theme === 'light' ? '#0f172a' : '#ffffff');
-    document.documentElement.style.setProperty('--text', theme === 'light' ? '#e5e7eb' : '#111827');
-    document.documentElement.style.setProperty('--border', theme === 'light' ? '#1f2937' : '#E5E7EB');
+    const next = theme === 'light' ? 'dark' : 'light';
+    setTheme(next);
+    document.documentElement.style.setProperty('--background', next === 'dark' ? '#0b1220' : '#f9fafb');
+    document.documentElement.style.setProperty('--surface', next === 'dark' ? '#0f172a' : '#ffffff');
+    document.documentElement.style.setProperty('--text', next === 'dark' ? '#e5e7eb' : '#111827');
+    document.documentElement.style.setProperty('--border', next === 'dark' ? '#1f2937' : '#E5E7EB');
   };
 
   return (
@@ -248,11 +234,9 @@ function NotesScreen() {
   );
 }
 
-/**
- * PUBLIC_INTERFACE
- * App entry with optional routing; single Notes screen routes.
- */
+// PUBLIC_INTERFACE
 function App() {
+  /** App entry with optional routing; single Notes screen routes. */
   return (
     <Router>
       <Routes>
