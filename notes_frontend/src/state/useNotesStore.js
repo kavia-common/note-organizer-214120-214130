@@ -1,5 +1,6 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from "react";
 import { notesApi, tagsApi } from "../api/client";
+import { createRealtimeClient } from "../api/ws";
 
 /**
  * Store shape:
@@ -60,10 +61,14 @@ function reducer(state, action) {
 
 const NotesContext = createContext(undefined);
 
-// PUBLIC_INTERFACE
+/**
+ * PUBLIC_INTERFACE
+ * Provides global notes state and actions and keeps state in sync with backend via WebSocket.
+ */
 export function NotesProvider({ children, initial = {} }) {
   /** Provides global notes state and actions. */
   const [state, dispatch] = useReducer(reducer, { ...initialState, ...initial });
+  const wsRef = useRef(null);
 
   const fetchNotes = useCallback(async () => {
     dispatch({ type: "SET_LOADING", payload: true });
@@ -93,6 +98,68 @@ export function NotesProvider({ children, initial = {} }) {
   useEffect(() => {
     fetchTags();
   }, [fetchTags]);
+
+  // Setup realtime WebSocket client
+  useEffect(() => {
+    // Avoid duplicate clients
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+
+    wsRef.current = createRealtimeClient({
+      onOpen: () => {
+        // Optionally re-sync on reconnect to ensure state matches server filters
+        fetchNotes();
+        fetchTags();
+      },
+      onError: () => {
+        // No-op; errors are handled in the client with reconnect
+      },
+      onClose: () => {
+        // Nothing special; auto-reconnect handled internally
+      },
+      onEvent: (msg) => {
+        // Dispatch mutations based on event types
+        switch (msg.type) {
+          case "note.created": {
+            if (msg.data) dispatch({ type: "APPEND_NOTE", payload: msg.data });
+            break;
+          }
+          case "note.updated": {
+            if (msg.data) dispatch({ type: "UPDATE_NOTE", payload: msg.data });
+            break;
+          }
+          case "note.deleted": {
+            if (msg.data?.id != null) dispatch({ type: "REMOVE_NOTE", payload: msg.data.id });
+            break;
+          }
+          case "tag.created": {
+            if (msg.data) dispatch({ type: "SET_TAGS", payload: [...(state.tags || []), msg.data] });
+            break;
+          }
+          case "tag.deleted": {
+            if (msg.data?.id != null)
+              dispatch({
+                type: "SET_TAGS",
+                payload: (state.tags || []).filter((t) => t.id !== msg.data.id),
+              });
+            break;
+          }
+          default:
+            break;
+        }
+      },
+    });
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once on mount
 
   const actions = useMemo(
     () => ({
